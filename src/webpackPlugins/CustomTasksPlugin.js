@@ -1,79 +1,101 @@
+let Log = require('../Log');
+let collect = require('collect.js');
+
 class CustomTasksPlugin {
     /**
      * Apply the plugin.
      *
-     * @param {Object} compiler
+     * @param {import("webpack").Compiler} compiler
      */
     apply(compiler) {
-        compiler.plugin('done', stats => {
-            Mix.tasks.forEach(task => this.runTask(task, stats));
+        compiler.hooks.done.tapAsync(
+            this.constructor.name,
+            (stats, callback) => {
+                this.runTasks(stats).then(() => {
+                    if (Mix.components.get('version')) {
+                        this.applyVersioning();
+                    }
 
-            if (Mix.components.get('version')) {
-                this.applyVersioning();
+                    if (Mix.inProduction()) {
+                        this.minifyAssets();
+                    }
+
+                    if (Mix.isWatching()) {
+                        Mix.tasks.forEach(task => task.watch(Mix.isPolling()));
+                    }
+
+                    Mix.manifest.refresh();
+                    callback();
+                });
             }
-
-            if (Mix.inProduction()) {
-                this.minifyAssets();
-            }
-
-            if (Mix.isWatching()) {
-                Mix.tasks.forEach(task => task.watch(Mix.isPolling()));
-            }
-
-            Mix.manifest.refresh();
-        });
+        );
     }
 
     /**
      * Execute the task.
      *
      * @param {Task} task
+     * @param {import("webpack").Stats} stats
      */
     runTask(task, stats) {
-        task.run();
+        return Promise.resolve(task.run()).then(() => {
+            task.assets.forEach(asset => {
+                Mix.manifest.add(asset.pathFromPublic());
 
-        task.assets.forEach(asset => {
-            Mix.manifest.add(asset.pathFromPublic());
-
-            // Update the Webpack assets list for better terminal output.
-            stats.compilation.assets[asset.pathFromPublic()] = {
-                size: () => asset.size(),
-                emitted: true
-            };
+                // Update the Webpack assets list for better terminal output.
+                stats.compilation.assets[asset.pathFromPublic()] = {
+                    size: () => asset.size(),
+                    emitted: true
+                };
+            });
         });
+    }
+
+    /**
+     * Execute potentially asynchrone tasks sequentially.
+     *
+     * @param {Array} tasks
+     */
+    runTasks(stats, index = 0) {
+        if (index === Mix.tasks.length) return Promise.resolve();
+
+        const task = Mix.tasks[index];
+
+        return this.runTask(task, stats).then(() =>
+            this.runTasks(stats, index + 1)
+        );
     }
 
     /**
      * Minify the given asset file.
      */
     minifyAssets() {
-        let tasks = Mix.tasks.filter(
-            task => task.constructor.name !== 'VersionFilesTask'
-        );
+        collect(Mix.tasks)
+            .where('constructor.name', '!==', 'VersionFilesTask')
+            .where('constructor.name', '!==', 'CopyFilesTask')
+            .each(({ assets }) =>
+                assets.forEach(asset => {
+                    try {
+                        asset.minify();
+                    } catch (e) {
+                        Log.error(
+                            `Whoops! We had trouble minifying "${asset.relativePath()}". ` +
+                                `Perhaps you need to use mix.babel() instead?`
+                        );
 
-        tasks.forEach(task => {
-            task.assets.forEach(asset => {
-                try {
-                    asset.minify();
-                } catch (e) {
-                    console.log(
-                        `Whoops! We had trouble minifying "${asset.relativePath()}". ` +
-                            `Perhaps you need to use mix.babel() instead?`
-                    );
-
-                    throw e;
-                }
-            });
-        });
+                        throw e;
+                    }
+                })
+            );
     }
 
     /**
      * Version all files that are present in the manifest.
      */
     applyVersioning() {
-        let manifest = Object.keys(Mix.manifest.get());
-
-        manifest.forEach(file => Mix.manifest.hash(file));
+        collect(Mix.manifest.get()).each((value, key) =>
+            Mix.manifest.hash(key)
+        );
     }
 }
 

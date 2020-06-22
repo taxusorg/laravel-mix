@@ -5,7 +5,7 @@ class Coffee extends JavaScript {
      * Required dependencies for the component.
      */
     dependencies() {
-        return ['coffee-loader', 'coffeescript'].concat(super.dependencies());
+        return ['coffee-loader', 'coffeescript'].concat();
     }
 
     /**
@@ -15,7 +15,7 @@ class Coffee extends JavaScript {
         return [
             {
                 test: /\.coffee$/,
-                use: ['coffee-loader']
+                use: [{ loader: 'coffee-loader' }]
             }
         ].concat(super.webpackRules());
     }

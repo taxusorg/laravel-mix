@@ -10,6 +10,7 @@ test.beforeEach(t => {
     // Reset state.
     global.Config = require('../../../src/config')();
     global.Mix = new (require('../../../src/Mix'))();
+    require('../../../src/Chunks').Chunks.reset();
 
     fs.ensureDirSync('test/fixtures/fake-app/public');
 
@@ -23,14 +24,19 @@ test.afterEach.always(t => {
 });
 
 global.compile = (t, callback) => {
-    Mix.dispatch('init');
+    return new Promise((resolve, reject) => {
+        let config = buildConfig();
 
-    let config = new WebpackConfig().build();
+        webpack(config, (err, stats) => {
+            callback && callback(config);
+            t && t.end();
 
-    webpack(config, function(err, stats) {
-        callback(config);
-
-        t.end();
+            if (err) {
+                reject({ config, err, stats });
+            } else {
+                resolve({ config, err, stats });
+            }
+        });
     });
 };
 
@@ -49,7 +55,7 @@ global.readManifest = () => {
 global.assertManifestIs = (expected, t) => {
     let manifest = readManifest();
 
-    t.deepEqual(Object.keys(manifest), Object.keys(expected));
+    t.deepEqual(Object.keys(manifest).sort(), Object.keys(expected).sort());
 
     Object.keys(expected).forEach(key => {
         t.true(new RegExp(expected[key]).test(manifest[key]));

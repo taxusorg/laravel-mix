@@ -14,9 +14,20 @@ class Less extends Preprocessor {
      * @param {*} src
      * @param {string} output
      * @param {Object} pluginOptions
+     * @param {Array}  postCssPlugins
      */
-    register(src, output, pluginOptions = {}) {
-        this.preprocess('less', src, output, pluginOptions);
+    register(src, output, pluginOptions = {}, postCssPlugins = []) {
+        return this.preprocess(
+            'less',
+            src,
+            output,
+            pluginOptions,
+            postCssPlugins
+        );
+    }
+
+    chunkRegex() {
+        return /\.(css|less)$/;
     }
 }
 

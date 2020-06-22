@@ -1,11 +1,23 @@
-let webpack = require('webpack');
+let { Chunks } = require('../Chunks');
 
 class Extract {
     /**
      * Create a new component instance.
      */
     constructor() {
+        this.entry = null;
         this.extractions = [];
+        this.chunks = Chunks.instance();
+        this.chunks.runtime = true;
+    }
+
+    /**
+     * The name of the component.
+     *
+     * mix.extract() or mix.extractVendor()
+     */
+    name() {
+        return ['extract', 'extractVendors'];
     }
 
     /**
@@ -14,7 +26,18 @@ class Extract {
      * @param {*} libs
      * @param {string} output
      */
-    register(libs, output) {
+    register(libs = [], output) {
+        // If the user provides an output path as the first argument, they probably
+        // want to extract all node_module libraries to the specified file.
+        if (
+            arguments.length === 1 &&
+            typeof libs === 'string' &&
+            libs.endsWith('.js')
+        ) {
+            output = libs;
+            libs = [];
+        }
+
         this.extractions.push({ libs, output });
     }
 
@@ -24,32 +47,54 @@ class Extract {
      * @param {Entry} entry
      */
     webpackEntry(entry) {
-        this.extractions = this.extractions.map(
-            entry.addExtraction.bind(entry)
-        );
+        this.entry = entry;
+        this.chunks.entry = entry;
 
-        // If we are extracting vendor libraries, then we also need
-        // to extract Webpack's manifest file to assist with caching.
-        if (this.extractions.length) {
-            this.extractions.push(
-                path.join(entry.base, 'manifest').replace(/\\/g, '/')
-            );
-        }
+        this.extractions.forEach(extraction => {
+            extraction.output = this.extractionPath(extraction.output);
+
+            // FIXME: This is not ideal
+            // The webpack docs state that entries should not be used for vendor extraction
+            // However if there are no uses of a library then they will not be extracted
+            // Is there a better way to handle this?
+            if (extraction.libs.length) {
+                this.entry.addExtraction(extraction);
+            } else {
+                this.addChunk(extraction);
+            }
+        });
     }
 
-    /**
-     * webpack plugins to be appended to the master config.
-     */
-    webpackPlugins() {
-        // If we're extracting any vendor libraries, then we
-        // need to add the CommonChunksPlugin to strip out
-        // all relevant code into its own file.
-        if (this.extractions.length) {
-            return new webpack.optimize.CommonsChunkPlugin({
-                names: this.extractions,
-                minChunks: Infinity
-            });
+    addChunk(extraction) {
+        let pattern = '(?<!node_modules.*)[\\\\/]node_modules[\\\\/]';
+
+        /*
+        // The FIXME above means that this code should never fire when extraction.libs
+        // is empty. We'll leave this code here in case a better solution comes along
+        const libsPattern = extraction.libs.join('|');
+
+        if (libsPattern.length > 0) {
+            pattern = `${pattern}(${libsPattern})`;
         }
+        */
+
+        this.chunks.add(
+            `vendor${this.extractions.indexOf(extraction)}`,
+            extraction.output.replace(/\.js$/, ''),
+            new RegExp(pattern, 'i'),
+            {
+                chunks: 'all',
+                enforce: true
+            }
+        );
+    }
+
+    extractionPath(outputPath) {
+        if (outputPath) {
+            return new File(outputPath).normalizedOutputPath();
+        }
+
+        return path.join(this.entry.base, 'vendor').replace(/\\/g, '/');
     }
 }
 

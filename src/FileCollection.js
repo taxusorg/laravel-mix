@@ -1,6 +1,7 @@
-let concatenate = require('concatenate');
-let babel = require('babel-core');
+let concat = require('concat');
+let babel = require('@babel/core');
 let glob = require('glob');
+let Log = require('./Log');
 
 class FileCollection {
     /**
@@ -26,16 +27,15 @@ class FileCollection {
      * @param {object} wantsBabel
      */
     merge(output, wantsBabel = false) {
-        let contents = concatenate.sync(
-            this.files,
-            output.makeDirectories().path()
+        return concat(this.files, output.makeDirectories().path()).then(
+            contents => {
+                if (this.shouldCompileWithBabel(wantsBabel, output)) {
+                    output.write(this.babelify(contents));
+                }
+
+                return new File(output.makeDirectories().path());
+            }
         );
-
-        if (this.shouldCompileWithBabel(wantsBabel, output)) {
-            output.write(this.babelify(contents));
-        }
-
-        return new File(output.makeDirectories().path());
     }
 
     /**
@@ -86,7 +86,7 @@ class FileCollection {
             let files = glob.sync(src.path(), { nodir: true });
 
             if (!files.length) {
-                console.log(
+                Log.feedback(
                     `Notice: The ${src.path()} search produced no matches.`
                 );
             }

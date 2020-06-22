@@ -1,8 +1,8 @@
-let os = require("os");
+let os = require('os');
 let md5 = require('md5');
 let path = require('path');
 let fs = require('fs-extra');
-let uglify = require('uglify-js');
+let Terser = require('terser');
 let UglifyCss = require('clean-css');
 
 class File {
@@ -40,6 +40,12 @@ class File {
      */
     static exists(file) {
         return fs.existsSync(file);
+    }
+
+    normalizedOutputPath() {
+        return this.pathFromPublic(Config.publicPath)
+            .replace(/\.(js|css)$/, '')
+            .replace(/\\/g, '/');
     }
 
     /**
@@ -87,6 +93,13 @@ class File {
     }
 
     /**
+     * Get the relative path to the file, from the project root.
+     */
+    relativePathWithoutExtension() {
+        return path.relative(Mix.paths.root(), this.pathWithoutExtension());
+    }
+
+    /**
      * Get the absolute path to the file, minus the extension.
      */
     pathWithoutExtension() {
@@ -109,6 +122,24 @@ class File {
     }
 
     /**
+     *
+     * @param {string} filePath
+     * @param {string|null} publicPath
+     */
+    static stripPublicDir(filePath, publicPath = null) {
+        let publicDir = path.basename(publicPath || Config.publicPath);
+
+        if (
+            filePath.startsWith(`${publicDir}/`) ||
+            filePath.startsWith(`${publicDir}\\`)
+        ) {
+            return filePath.substr(publicDir.length + 1);
+        }
+
+        return filePath;
+    }
+
+    /**
      * Get the path to the file, starting at the project's public dir.
      *
      * @param {string|null} publicPath
@@ -117,6 +148,15 @@ class File {
         publicPath = publicPath || Config.publicPath;
 
         let extra = this.filePath.startsWith(publicPath) ? publicPath : '';
+
+        // If the path starts with the public folder remove it
+        if (
+            this.filePath.startsWith(
+                `${publicPath}/${path.basename(publicPath)}`
+            )
+        ) {
+            extra += `/${path.basename(publicPath)}`;
+        }
 
         return this.path().replace(Mix.paths.root(extra), '');
     }
@@ -151,7 +191,7 @@ class File {
         if (typeof body === 'object') {
             body = JSON.stringify(body, null, 4);
         }
-        
+
         body = body + os.EOL;
 
         fs.writeFileSync(this.absolutePath, body);
@@ -163,9 +203,7 @@ class File {
      * Read the file's contents.
      */
     read() {
-        return fs.readFileSync(this.path(), {
-            encoding: 'utf-8'
-        });
+        return fs.readFileSync(this.path(), 'utf8');
     }
 
     /**
@@ -201,7 +239,7 @@ class File {
     minify() {
         if (this.extension() === '.js') {
             this.write(
-                uglify.minify(this.path(), Config.uglify.uglifyOptions).code
+                Terser.minify(this.read(), Config.terser.terserOptions).code
             );
         }
 

@@ -30,8 +30,17 @@ class PostCss extends Preprocessor {
             type: 'postCss',
             src,
             output,
-            postCssPlugins
+            postCssPlugins: [].concat(postCssPlugins)
         });
+
+        // Register a split chunk that takes everything generated
+        // by this file and puts it in a separate file
+        // We use a output-specific chunk name so we don't accidentally merge multiple files
+        this._addChunks(
+            `styles-${output.relativePathWithoutExtension()}`,
+            src,
+            output
+        );
     }
 
     /**
